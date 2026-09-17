@@ -1,7 +1,6 @@
 const int LED_PIN = 7;
 
 void setup() {
-  // 7번 핀을 출력 모드로 설정
   pinMode(LED_PIN, OUTPUT);
 }
 
