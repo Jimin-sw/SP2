@@ -1,0 +1,132 @@
+#include <Servo.h>
+
+// 아두이노 핀 설정
+#define PIN_SERVO 10
+
+// 서보모터 각도에 따른 듀티값
+#define _DUTY_MIN 500   // 0도
+#define _DUTY_NEU 1525  // 90도
+#define _DUTY_MAX 2550  // 180도
+
+#define _POS_START _DUTY_MIN
+#define _POS_END   _DUTY_MAX
+
+#define INTERVAL 20  // 서보모터 제어 주기 (ms)
+
+#define FIRST_STAGE_DURATION  60000UL   // 첫 번째 동작 시간 (60초)
+#define SECOND_STAGE_DURATION 300000UL  // 두 번째 동작 시간 (300초)
+
+// 전역 변수
+unsigned long last_sampling_time;
+unsigned long stage_start_time;
+
+Servo myservo;
+
+float SERVO_SPEED;               // 서보모터 회전 속도
+float duty_change_per_interval;  // 한 주기마다 변하는 듀티값
+float duty_curr;                 // 현재 듀티값
+int duty_target;                 // 목표 듀티값
+
+int stage;  // 현재 동작 단계
+
+void updateDutyChangePerInterval() {
+  duty_change_per_interval =
+    ((float)(_DUTY_MAX - _DUTY_MIN) / 180.0)
+    * SERVO_SPEED
+    * ((float)INTERVAL / 1000.0);
+}
+
+void setup() {
+  // 서보모터 초기 설정
+  myservo.attach(PIN_SERVO);
+
+  duty_curr = _POS_START;
+  duty_target = _POS_END;
+  myservo.writeMicroseconds((int)duty_curr);
+
+  // 시리얼 통신 시작
+  Serial.begin(57600);
+
+  // 첫 번째 동작: 60초 동안 180도 회전
+  SERVO_SPEED = 3.0;
+  updateDutyChangePerInterval();
+
+  Serial.print("duty_change_per_interval:");
+  Serial.println(duty_change_per_interval);
+
+  // 첫 번째 단계부터 시작
+  stage = 0;
+
+  // 시작 시간 저장
+  last_sampling_time = millis();
+  stage_start_time = last_sampling_time;
+}
+
+void loop() {
+  unsigned long time_curr = millis();
+  bool stage_changed = false;
+
+  // 설정한 주기가 지날 때까지 대기
+  if (time_curr - last_sampling_time < INTERVAL)
+    return;
+
+  last_sampling_time += INTERVAL;
+
+  // 60초가 지나면 두 번째 동작으로 변경
+  if (stage == 0 &&
+      time_curr - stage_start_time >= FIRST_STAGE_DURATION) {
+
+    // 서보모터를 180도 위치로 이동
+    duty_curr = _POS_END;
+    myservo.writeMicroseconds((int)duty_curr);
+
+    // 두 번째 동작 설정: 90도까지 300초 동안 회전
+    stage = 1;
+    SERVO_SPEED = 0.3;
+    duty_target = _DUTY_NEU;
+
+    updateDutyChangePerInterval();
+    stage_start_time = time_curr;
+    stage_changed = true;
+  }
+
+  // 300초가 지나면 동작 종료
+  else if (stage == 1 &&
+           time_curr - stage_start_time >= SECOND_STAGE_DURATION) {
+
+    duty_curr = _DUTY_NEU;
+    duty_target = _DUTY_NEU;
+    myservo.writeMicroseconds((int)duty_curr);
+
+    stage = 2;
+    stage_changed = true;
+  }
+
+  // 현재 위치에서 목표 위치까지 듀티값 변경
+  if (stage < 2 && !stage_changed) {
+
+    if (duty_target > duty_curr) {
+      duty_curr += duty_change_per_interval;
+
+      if (duty_curr > duty_target)
+        duty_curr = duty_target;
+    }
+    else if (duty_target < duty_curr) {
+      duty_curr -= duty_change_per_interval;
+
+      if (duty_curr < duty_target)
+        duty_curr = duty_target;
+    }
+
+    // 변경된 듀티값을 서보모터에 적용
+    myservo.writeMicroseconds((int)(duty_curr + 0.5));
+  }
+
+  // 현재 듀티값을 시리얼 플로터에 출력
+  Serial.print("Min:500");
+  Serial.print(",duty_target:");
+  Serial.print(duty_target);
+  Serial.print(",duty_curr:");
+  Serial.print(duty_curr);
+  Serial.print(",Max:2550");
+  Serial.println("");}
